@@ -15,7 +15,8 @@
 package bmclogin
 
 import (
-	"github.com/sirupsen/logrus"
+	"errors"
+	"fmt"
 
 	"github.com/bmc-toolbox/bmclib/devices"
 	"github.com/bmc-toolbox/bmclib/discover"
@@ -26,18 +27,17 @@ type Params struct {
 	Credentials     []map[string]string //A slice of username, passwords to login with.
 	CheckCredential bool                //Validates the credential works - this is only required for http(s) connections.
 	Retries         int                 //The number of times to retry a credential
-	Logger          *logrus.Logger
 }
 
 type LoginInfo struct {
 	FailedCredentials  []map[string]string //The credentials that failed.
 	WorkingCredentials map[string]string   //The credentials that worked.
 	ActiveIpAddress    string              //The IP that we could login into and is active.
-	Attempts           int                 //Total login attempts.
+	Attempts           int                 //The number of login attempts.
 }
 
 // Login() carries out login actions.
-func (p *Params) Login() (connection interface{}, success bool, loginInfo LoginInfo) {
+func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error) {
 
 	if p.Retries == 0 {
 		p.Retries = 1
@@ -59,18 +59,18 @@ func (p *Params) Login() (connection interface{}, success bool, loginInfo LoginI
 				for t := 0; t <= p.Retries; t++ {
 
 					loginInfo.Attempts += 1
-					connection, IpInActive, success := p.attemptLogin(ip, user, pass)
+					connection, ipInactive, err := p.attemptLogin(ip, user, pass)
 
 					//if the IP is not active, break out of this loop
 					//to try credentials on the next IP.
-					if IpInActive {
+					if ipInactive {
 						break
 					}
 
-					if success {
+					if err == nil {
 						loginInfo.ActiveIpAddress = ip
 						loginInfo.WorkingCredentials = map[string]string{user: pass}
-						return connection, true, loginInfo
+						return connection, loginInfo, err
 					}
 
 					loginInfo.FailedCredentials = append(loginInfo.FailedCredentials, map[string]string{user: pass})
@@ -79,25 +79,21 @@ func (p *Params) Login() (connection interface{}, success bool, loginInfo LoginI
 		}
 	}
 
-	return connection, false, loginInfo
+	return connection, loginInfo, errors.New("All attempts to login failed.")
 }
 
 // attemptLogin tries to scanAndConnect
-func (p *Params) attemptLogin(ip string, user string, pass string) (connection interface{}, IpInActive bool, success bool) {
+func (p *Params) attemptLogin(ip string, user string, pass string) (connection interface{}, ipInactive bool, err error) {
 
-	connection, err := discover.ScanAndConnect(ip, user, pass)
+	// Scan BMC type and connect
+	connection, err = discover.ScanAndConnect(ip, user, pass)
 	if err != nil {
-		if p.Logger != nil {
-			p.Logger.WithFields(logrus.Fields{
-				"IP":    ip,
-				"Error": err,
-			}).Info("ScanAndConnect attempt unsuccessful.")
-		}
-		return connection, false, false
+		return connection, ipInactive, errors.New("ScanAndConnect attempt unsuccessful.")
 	}
 
+	// Don't attempt to login via web with credentials.
 	if !p.CheckCredential {
-		return connection, false, true
+		return connection, ipInactive, err
 	}
 
 	switch connection.(type) {
@@ -106,46 +102,36 @@ func (p *Params) attemptLogin(ip string, user string, pass string) (connection i
 		bmc := connection.(devices.Bmc)
 		err := bmc.CheckCredentials()
 		if err != nil {
-			if p.Logger != nil {
-				p.Logger.WithFields(logrus.Fields{
-					"IP":    ip,
-					"User":  user,
-					"Error": err,
-				}).Info("Login attempt failed.")
-			}
-			return connection, false, false
+			return connection, ipInactive, errors.New(
+				fmt.Sprintf("BMC login attempt failed, account: %s", user))
 		}
 
-		return connection, false, true
+		//successful login.
+		return connection, ipInactive, nil
 	case devices.BmcChassis:
 
 		chassis := connection.(devices.BmcChassis)
 		err := chassis.CheckCredentials()
 		if err != nil {
-			if p.Logger != nil {
-				p.Logger.WithFields(logrus.Fields{
-					"IP":    ip,
-					"User":  user,
-					"Error": err,
-				}).Info("Login attempt failed.")
-			}
-			return connection, false, false
+			return connection, ipInactive, errors.New(
+				fmt.Sprintf("Chassis login attempt failed, account: %s", user))
 		}
 
 		//A chassis has one or more controllers
 		//We return true if this controller is active.
 		if !chassis.IsActive() {
-			if p.Logger != nil {
-				p.Logger.WithFields(logrus.Fields{
-					"IP":   ip,
-					"User": user,
-				}).Info("Chassis inactive.")
-			}
-			return connection, true, true
+			ipInactive = true
+			return connection, ipInactive, errors.New(
+				fmt.Sprintf("Chassis inactive, ip: %s", ip))
 		}
 
-		return connection, false, true
+		return connection, ipInactive, nil
+	default:
+		return connection, ipInactive, errors.New(
+			fmt.Sprintf("Unrecognized device type."))
 	}
 
-	return connection, false, false
+	//we won't ever end up here
+	return connection, ipInactive, errors.New(
+		fmt.Sprintf("Unable to login"))
 }
