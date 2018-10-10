@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
-	"os"
 
 	"github.com/bmc-toolbox/bmclib/devices"
 	"github.com/bmc-toolbox/bmclogin"
@@ -11,13 +9,7 @@ import (
 
 func main() {
 
-	log := logrus.New()
-	log.Out = os.Stdout
-
-	log.SetLevel(logrus.InfoLevel)
-
 	credentials := []map[string]string{
-		map[string]string{"foo": "bar"},
 		map[string]string{"Administrator": "foobar"},
 		map[string]string{"User1": "blah"},
 		map[string]string{"user2": "password"},
@@ -28,11 +20,10 @@ func main() {
 		Credentials:     credentials,
 		CheckCredential: true,
 		Retries:         1,
-		Logger:          log,
 	}
 
-	connection, success, loginInfo := c.Login()
-	if success {
+	connection, loginInfo, err := c.Login()
+	if err == nil {
 
 		switch (connection).(type) {
 		case devices.Bmc:
@@ -41,9 +32,9 @@ func main() {
 			connection.(devices.BmcChassis).Close()
 		}
 
-		log.Info("Successful login")
+		fmt.Println("Successful login")
 	} else {
-		log.Error("login failed")
+		fmt.Println("login failed")
 	}
 
 	fmt.Printf("%+v\n", loginInfo)
