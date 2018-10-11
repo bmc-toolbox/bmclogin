@@ -10,9 +10,10 @@ import (
 func main() {
 
 	credentials := []map[string]string{
-		map[string]string{"Administrator": "foobar"},
-		map[string]string{"User1": "blah"},
 		map[string]string{"user2": "password"},
+		map[string]string{"Administrator": "password"},
+		map[string]string{"root": "calvin"},
+		map[string]string{"ADMIN": "ADMIN"},
 	}
 
 	c := bmclogin.Params{

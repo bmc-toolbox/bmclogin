@@ -64,6 +64,14 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 					//if the IP is not active, break out of this loop
 					//to try credentials on the next IP.
 					if ipInactive {
+
+						//if we're able to login to asset that has a single IP address,
+						//but its status is not active,
+						if len(p.IpAddresses) == 1 {
+							loginInfo.WorkingCredentials = map[string]string{user: pass}
+
+							return connection, loginInfo, err
+						}
 						break
 					}
 
@@ -121,8 +129,7 @@ func (p *Params) attemptLogin(ip string, user string, pass string) (connection i
 		//We return true if this controller is active.
 		if !chassis.IsActive() {
 			ipInactive = true
-			return connection, ipInactive, errors.New(
-				fmt.Sprintf("Chassis inactive, ip: %s", ip))
+			return connection, ipInactive, nil
 		}
 
 		return connection, ipInactive, nil
