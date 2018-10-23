@@ -17,9 +17,15 @@ package bmclogin
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
 
 	"github.com/bmc-toolbox/bmclib/devices"
 	"github.com/bmc-toolbox/bmclib/discover"
+)
+
+var (
+	debug bool
 )
 
 type Params struct {
@@ -38,6 +44,10 @@ type LoginInfo struct {
 
 // Login() carries out login actions.
 func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error) {
+
+	if os.Getenv("DEBUGLOGIN") != "" {
+		debug = true
+	}
 
 	if p.Retries == 0 {
 		p.Retries = 1
@@ -61,6 +71,11 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 					loginInfo.Attempts += 1
 					connection, ipInactive, err := p.attemptLogin(ip, user, pass)
 
+					if debug {
+						log.Printf("DEBUG: Login attempt. IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s",
+							ip, user, pass, loginInfo.Attempts, err)
+					}
+
 					//if the IP is not active, break out of this loop
 					//to try credentials on the next IP.
 					if ipInactive {
@@ -76,6 +91,11 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 					}
 
 					if err == nil {
+						if debug {
+							log.Printf("DEBUG: Login success. IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s",
+								ip, user, pass, loginInfo.Attempts, err)
+						}
+
 						loginInfo.ActiveIpAddress = ip
 						loginInfo.WorkingCredentials = map[string]string{user: pass}
 						return connection, loginInfo, err
