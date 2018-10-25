@@ -19,13 +19,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/bmc-toolbox/bmclib/devices"
 	"github.com/bmc-toolbox/bmclib/discover"
 )
 
 var (
-	debug bool
+	debug   bool
+	backoff int
 )
 
 type Params struct {
@@ -45,8 +47,11 @@ type LoginInfo struct {
 // Login() carries out login actions.
 func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error) {
 
-	if os.Getenv("DEBUGLOGIN") != "" {
+	switch os.Getenv("DEBUG_BMCLOGIN") {
+	case "1":
 		debug = true
+	default:
+		debug = false
 	}
 
 	if p.Retries == 0 {
@@ -68,11 +73,13 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 				//for each retry attempt
 				for t := 0; t <= p.Retries; t++ {
 
+					time.Sleep(time.Duration(backoff) * time.Second)
+
 					loginInfo.Attempts += 1
 					connection, ipInactive, err := p.attemptLogin(ip, user, pass)
 
 					if debug {
-						log.Printf("DEBUG: Login attempt. IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s",
+						log.Printf("DEBUG_BMCLOGIN: Login attempt. IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s",
 							ip, user, pass, loginInfo.Attempts, err)
 					}
 
@@ -92,7 +99,7 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 
 					if err == nil {
 						if debug {
-							log.Printf("DEBUG: Login success. IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s",
+							log.Printf("DEBUG_BMCLOGIN: Login success. IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s",
 								ip, user, pass, loginInfo.Attempts, err)
 						}
 
@@ -102,6 +109,8 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 					}
 
 					loginInfo.FailedCredentials = append(loginInfo.FailedCredentials, map[string]string{user: pass})
+					backoff = loginInfo.Attempts * 10
+					log.Printf("DEBUG_BMCLOGIN: Login failed. Backoff: %dsecs IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s", backoff, ip, user, pass, loginInfo.Attempts, err)
 				}
 			}
 		}
