@@ -28,14 +28,19 @@ import (
 var (
 	debug                 bool
 	backoff               int
+	interrupt             bool
 	errUnrecognizedDevice = errors.New("Unrecognized device")
+	errInterrupted        = errors.New("Received interrupt during connection setup")
 )
 
+// Params are attributes set by callers to login to the BMC
 type Params struct {
 	IpAddresses     []string            //IPs - since chassis may have more than a single IP.
 	Credentials     []map[string]string //A slice of username, passwords to login with.
 	CheckCredential bool                //Validates the credential works - this is only required for http(s) connections.
 	Retries         int                 //The number of times to retry a credential
+	StopChan        <-chan struct{}     //If the caller decides to pass this channel, when its closed, we return to the caller.
+	doneChan        chan struct{}       //This channel is closed to indicate other internal routines spawned to close.
 }
 
 type LoginInfo struct {
@@ -46,6 +51,7 @@ type LoginInfo struct {
 }
 
 // Login() carries out login actions.
+// nolint: gocyclo
 func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error) {
 
 	if os.Getenv("DEBUG_BMCLOGIN") == "1" {
@@ -56,6 +62,19 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 		p.Retries = 1
 	}
 
+	p.doneChan = make(chan struct{})
+	if p.StopChan != nil {
+		go func() {
+			select {
+			case <-p.StopChan:
+				interrupt = true
+			case <-p.doneChan:
+				return
+			}
+		}()
+	}
+
+	defer close(p.doneChan)
 	//for credential map in slice
 	for _, credentials := range p.Credentials {
 
@@ -70,6 +89,10 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 
 				//for each retry attempt
 				for t := 0; t <= p.Retries; t++ {
+
+					if interrupt {
+						return connection, loginInfo, errInterrupted
+					}
 
 					time.Sleep(time.Duration(backoff) * time.Second)
 
@@ -90,7 +113,6 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 					if ipInactive {
 
 						//if we're able to login to asset that has a single IP address,
-						//but its status is not active,
 						if len(p.IpAddresses) == 1 {
 							loginInfo.WorkingCredentials = map[string]string{user: pass}
 							return connection, loginInfo, err
