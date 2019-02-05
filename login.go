@@ -48,11 +48,8 @@ type LoginInfo struct {
 // Login() carries out login actions.
 func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error) {
 
-	switch os.Getenv("DEBUG_BMCLOGIN") {
-	case "1":
+	if os.Getenv("DEBUG_BMCLOGIN") == "1" {
 		debug = true
-	default:
-		debug = false
 	}
 
 	if p.Retries == 0 {
@@ -114,7 +111,9 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 
 					loginInfo.FailedCredentials = append(loginInfo.FailedCredentials, map[string]string{user: pass})
 					backoff = loginInfo.Attempts * 10
-					log.Printf("DEBUG_BMCLOGIN: Login failed. Backoff: %dsecs IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s", backoff, ip, user, pass, loginInfo.Attempts, err)
+					if debug {
+						log.Printf("DEBUG_BMCLOGIN: Login failed. Backoff: %dsecs IP: %s, User: %s, Pass: %s, Attempt: %d, Err: %s", backoff, ip, user, pass, loginInfo.Attempts, err)
+					}
 				}
 			}
 		}
