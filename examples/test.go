@@ -10,10 +10,10 @@ import (
 func main() {
 
 	credentials := []map[string]string{
-		map[string]string{"user2": "password"},
-		map[string]string{"Administrator": "password"},
-		map[string]string{"root": "calvin"},
-		map[string]string{"ADMIN": "ADMIN"},
+		{"user2": "password"},
+		{"Administrator": "password"},
+		{"root": "calvin"},
+		{"ADMIN": "ADMIN"},
 	}
 
 	c := bmclogin.Params{
@@ -29,8 +29,8 @@ func main() {
 		switch (connection).(type) {
 		case devices.Bmc:
 			connection.(devices.Bmc).Close()
-		case devices.BmcChassis:
-			connection.(devices.BmcChassis).Close()
+		case devices.Cmc:
+			connection.(devices.Cmc).Close()
 		}
 
 		fmt.Println("Successful login")
