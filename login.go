@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -53,7 +54,6 @@ type LoginInfo struct {
 // Login() carries out login actions.
 // nolint: gocyclo
 func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error) {
-
 	if os.Getenv("DEBUG_BMCLOGIN") == "1" {
 		debug = true
 	}
@@ -73,20 +73,25 @@ func (p *Params) Login() (connection interface{}, loginInfo LoginInfo, err error
 			}
 		}()
 	}
-
 	defer close(p.doneChan)
-	//for credential map in slice
-	for _, credentials := range p.Credentials {
+	//for each IpAddress
+	for _, ip := range p.IpAddresses {
+		if ip == "" {
+			continue
+		}
 
-		//for each credential k, v
-		for user, pass := range credentials {
+		hostreachable, _ := p.IsHostReachable(ip, 443)
+		if !hostreachable {
+			log.Printf("Host %s is not reachable at port 443", ip)
+			continue
+		}
 
-			//for each IpAddress
-			for _, ip := range p.IpAddresses {
-				if ip == "" {
-					continue
-				}
+		//for credential map in slice
+		for _, credentials := range p.Credentials {
 
+			//for each credential k, v
+			for user, pass := range credentials {
+				backoff = 0
 				//for each retry attempt
 				for t := 0; t <= p.Retries; t++ {
 
@@ -192,4 +197,22 @@ func (p *Params) attemptLogin(ip string, user string, pass string) (connection i
 	//we won't ever end up here
 	//return connection, ipInactive, errors.New(
 	//	fmt.Sprintf("Unable to login"))
+}
+
+// Check if Host is Reachable
+func (p *Params) IsHostReachable(host string, port int) (hostreachable bool, err error) {
+	timeout := 30 * time.Second
+	target := fmt.Sprintf("%s:%d", host, port)
+
+	conn, err := net.DialTimeout("tcp", target, timeout)
+	if err != nil {
+		return false, err
+	}
+
+	if conn != nil {
+		conn.Close()
+		return true, nil
+	}
+
+	return false, err
 }
